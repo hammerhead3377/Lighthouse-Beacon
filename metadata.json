@@ -1,0 +1,6 @@
+{
+  "name": "LightHouse Beacon",
+  "description": "Sovereign voice link client. Connects wearable Ray-Ban microphones to private Jetson servers via SSH.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

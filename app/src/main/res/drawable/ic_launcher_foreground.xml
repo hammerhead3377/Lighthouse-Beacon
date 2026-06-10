@@ -1,0 +1,67 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Semi-transparent expanding beacon of light (Left) -->
+    <path
+        android:fillColor="#35D0E4FF"
+        android:pathData="M54,32 L5,8 C5,8 1,32 5,48 Z" />
+        
+    <!-- Semi-transparent expanding beacon of light (Right) -->
+    <path
+        android:fillColor="#35D0E4FF"
+        android:pathData="M54,32 L103,8 C103,8 107,32 103,48 Z" />
+
+    <!-- Lighthouse base rocks / foundation -->
+    <path
+        android:fillColor="#44474A"
+        android:pathData="M24,84 C24,80 34,78 40,78 H68 C74,78 84,80 84,84 C84,85.5 80,86 54,86 C28,86 24,85.5 24,84 Z" />
+
+    <!-- Main Tower tapering upwards -->
+    <path
+        android:fillColor="#D0E4FF"
+        android:pathData="M39,78 L43.5,38 H64.5 L69,78 Z" />
+
+    <!-- Secondary Technical Carbon Stripes cut into the tower -->
+    <path
+        android:fillColor="#1A1C1E"
+        android:pathData="M41,60 H67 V64 H41 Z" />
+    <path
+        android:fillColor="#1A1C1E"
+        android:pathData="M42.2,48 H65.8 V52 H42.2 Z" />
+
+    <!-- Gallery / Balcony Deck -->
+    <path
+        android:fillColor="#B4E197"
+        android:pathData="M35,38 H73 V35 H35 Z" />
+
+    <!-- Delicate Metal Railing structure -->
+    <path
+        android:fillColor="#D0E4FF"
+        android:pathData="M37,35 H71 V32 H37 Z" />
+    <path
+        android:fillColor="#1A1C1E"
+        android:pathData="M42,32 H43 V35 H42 Z M48,32 H49 V35 H48 Z M54,32 H55 V35 H54 Z M60,32 H61 V35 H60 Z M66,32 H67 V35 H66 Z" />
+
+    <!-- Lantern Room Glass Chamber -->
+    <path
+        android:fillColor="#20D0E4FF"
+        android:pathData="M45,35 H63 V26 H45 Z" />
+
+    <!-- Active Glowing Light Source Core -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M54,30.5m-3.5,0a3.5,3.5 0,1,1 7,0a3.5,3.5 0,1,1 -7,0" />
+
+    <!-- Upper Dome Cap -->
+    <path
+        android:fillColor="#D0E4FF"
+        android:pathData="M45,26 C45,15 63,15 63,26 Z" />
+        
+    <!-- Top-most Beacon Tip / Needle -->
+    <path
+        android:fillColor="#B4E197"
+        android:pathData="M53.5,15 H54.5 V10 H53.5 Z" />
+</vector>
