@@ -319,7 +319,7 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
                     channel.connect(5000)
 
                     var counter = 0
-                    while (!channel.isClosed && counter < 150) { // 15 seconds command timeout maximum execution
+                    while (!channel.isClosed && counter < 900) { // 90 seconds command timeout
                         delay(100)
                         counter++
                     }
