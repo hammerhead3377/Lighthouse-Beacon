@@ -17,7 +17,7 @@ data class ConnectionSettings(
     val authType: String = "PASSWORD", // "PASSWORD" or "PRIVATE_KEY"
     val password: String = "",
     val privateKey: String = "",
-    val commandTemplate: String = "openclaw agent --agent main --message '%s' --json",
+    val commandTemplate: String = "/home/thomas/.local/bin/claw-agent '%s'",
     // Options
     val autoReadTts: Boolean = true,
     val continuousLoop: Boolean = false,

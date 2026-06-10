@@ -293,6 +293,7 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
 
                     val config = java.util.Properties()
                     config["StrictHostKeyChecking"] = "no"
+                    config["PreferredAuthentications"] = if (currentSettings.authType == "PRIVATE_KEY") "publickey" else "password"
                     session.setConfig(config)
 
                     if (currentSettings.authType == "PASSWORD" && currentSettings.password.isNotBlank()) {
