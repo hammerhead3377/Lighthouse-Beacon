@@ -289,7 +289,7 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
                     }
 
                     val session = jsch.getSession(currentSettings.username, currentSettings.host, currentSettings.port)
-                    session.timeout = 5000
+                    session.timeout = 0 // no SO_TIMEOUT — command loop handles the 90s ceiling
 
                     val config = java.util.Properties()
                     config["StrictHostKeyChecking"] = "no"
