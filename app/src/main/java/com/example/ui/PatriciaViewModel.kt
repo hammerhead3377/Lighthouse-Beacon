@@ -2,6 +2,8 @@ package com.example.ui
 
 import android.app.Application
 import android.content.Intent
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -34,6 +36,7 @@ import java.util.Properties
 
 enum class AppState {
     IDLE,
+    WARMING,
     LISTENING,
     CONNECTING_SSH,
     RUNNING_CMD,
@@ -62,9 +65,14 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
     private var sshJob: Job? = null
+    private var warmupJob: Job? = null
+    private var activeSession: Session? = null  // tracks live SSH session for clean teardown
 
     // Mirror of Settings
     private var currentSettings: ConnectionSettings = ConnectionSettings()
+
+    // Resolved host after warmup auto-detection (local vs Tailscale)
+    private var resolvedHost: String = currentSettings.host
 
     init {
         val db = AppDatabase.getDatabase(application)
@@ -92,6 +100,98 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
         }
 
         initTextToSpeech()
+
+        // Immediate radio-chirp — fires in <100ms, no network, signals "system alive"
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+                toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 350)
+                delay(500)
+                toneGen.release()
+            } catch (_: Exception) {}
+        }
+
+        // Pre-warm the model the moment the app opens so the first real query hits a warm session
+        warmupJob = viewModelScope.launch {
+            delay(800) // let settings load first
+            warmupBeaconSilently()
+        }
+    }
+
+    private fun warmupBeaconSilently() {
+        warmupJob = viewModelScope.launch {
+            _appState.value = AppState.WARMING
+            appendTerminal("\n⚡ Beacon waking...")
+
+            // Try hosts in order: configured host first, then Tailscale fallback
+            val s = currentSettings
+            val hostsToTry = listOfNotNull(
+                s.host,
+                if (s.host != "100.124.172.9") "100.124.172.9" else null
+            )
+
+            val greeting = withContext(Dispatchers.IO) {
+                var result: String? = null
+                for (host in hostsToTry) {
+                    try {
+                        val jsch = JSch()
+                        val session = jsch.getSession(s.username, host, s.port)
+                        session.timeout = 0
+                        val config = Properties()
+                        config["StrictHostKeyChecking"] = "no"
+                        config["PreferredAuthentications"] = if (s.authType == "PRIVATE_KEY") "publickey" else "password"
+                        session.setConfig(config)
+                        if (s.authType == "PASSWORD" && s.password.isNotBlank()) session.setPassword(s.password)
+                        session.connect(2500) // short connect timeout for host detection
+                        activeSession = session
+
+                        val channel = session.openChannel("exec") as ChannelExec
+                        val msg = "greet the user, you are online and ready"
+                        channel.setCommand(s.commandTemplate.replace("%s", msg.replace("'", "'\\''") ))
+                        val out = ByteArrayOutputStream()
+                        channel.setOutputStream(out)
+                        channel.setErrStream(ByteArrayOutputStream())
+                        channel.connect(2500)
+
+                        var counter = 0
+                        while (!channel.isClosed && counter < 900) { delay(100); counter++ }
+                        channel.disconnect()
+                        session.disconnect()
+                        activeSession = null
+
+                        resolvedHost = host // lock in the working host
+                        result = parsePatriciaResponse(out.toString("UTF-8").trim())
+                        appendTerminal(" [${host}]")
+                        break
+                    } catch (e: Exception) {
+                        appendTerminal("\n  ↳ $host unreachable")
+                    }
+                }
+                result
+            }
+
+            if (greeting != null && greeting.isNotBlank()) {
+                appendTerminal("\n🦉 $greeting")
+                // Speak the greeting — agent is "aware" user is present
+                if (textToSpeech != null) {
+                    _appState.value = AppState.SPEAKING
+                    textToSpeech?.speak(greeting, TextToSpeech.QUEUE_FLUSH, null, "beacon_greeting")
+                } else {
+                    _appState.value = AppState.IDLE
+                }
+            } else {
+                appendTerminal("\n  No route to Beacon — launch Tailscale?")
+                _appState.value = AppState.ERROR
+                // Auto-open Tailscale so user just needs to tap Connect
+                try {
+                    val ctx = getApplication<Application>()
+                    val tsIntent = ctx.packageManager.getLaunchIntentForPackage("com.tailscale.ipn")
+                        ?: ctx.packageManager.getLaunchIntentForPackage("com.tailscale.android")
+                    tsIntent?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    tsIntent?.let { ctx.startActivity(it) }
+                } catch (e: Exception) { /* Tailscale not installed */ }
+            }
+        }
     }
 
     private fun initTextToSpeech() {
@@ -191,7 +291,7 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 // Sensitivity tweaks for Bluetooth headset (Ray-Ban glasses microphone array)
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 2000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
             }
 
             val recognizer = SpeechRecognizer.createSpeechRecognizer(speechContext)
@@ -213,28 +313,44 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
                 override fun onEndOfSpeech() {}
 
                 override fun onError(error: Int) {
-                    val errorMsg = when (error) {
-                        SpeechRecognizer.ERROR_AUDIO -> "Audio record error"
-                        SpeechRecognizer.ERROR_CLIENT -> "Client process error"
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Record permissions missing"
-                        SpeechRecognizer.ERROR_NETWORK -> "Network STT error"
-                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "STT connection lookup timeout"
-                        SpeechRecognizer.ERROR_NO_MATCH -> "No voice detected"
-                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Mic or device engine busy"
-                        SpeechRecognizer.ERROR_SERVER -> "Remote recognition server error"
-                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Voice timeout"
-                        else -> "Capture error code $error"
-                    }
-
-                    appendTerminal("\n⚠️ STT: $errorMsg")
-                    _appState.value = AppState.ERROR
+                    val isSilenceTimeout = error == SpeechRecognizer.ERROR_NO_MATCH ||
+                            error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
 
                     if (currentSettings.continuousLoop && _isRecordingActive.value) {
+                        // In loop mode: silence timeouts are normal — restart quietly, no error UI
+                        if (!isSilenceTimeout) {
+                            val errorMsg = when (error) {
+                                SpeechRecognizer.ERROR_AUDIO -> "Audio record error"
+                                SpeechRecognizer.ERROR_CLIENT -> "Client process error"
+                                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Record permissions missing"
+                                SpeechRecognizer.ERROR_NETWORK -> "Network STT error"
+                                SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "STT connection lookup timeout"
+                                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Mic or device engine busy"
+                                SpeechRecognizer.ERROR_SERVER -> "Remote recognition server error"
+                                else -> "Capture error code $error"
+                            }
+                            appendTerminal("\n⚠️ STT: $errorMsg")
+                            _appState.value = AppState.ERROR
+                        }
+                        // Always restart the loop — silence timeout or real error
                         viewModelScope.launch(Dispatchers.Main) {
-                            delay(1200)
+                            delay(500)
                             startSpeechRecognizerInternal()
                         }
                     } else {
+                        val errorMsg = when (error) {
+                            SpeechRecognizer.ERROR_AUDIO -> "Audio record error"
+                            SpeechRecognizer.ERROR_CLIENT -> "Client process error"
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Record permissions missing"
+                            SpeechRecognizer.ERROR_NETWORK -> "Network STT error"
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "STT connection lookup timeout"
+                            SpeechRecognizer.ERROR_NO_MATCH -> "No voice detected"
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Mic or device engine busy"
+                            SpeechRecognizer.ERROR_SERVER -> "Remote recognition server error"
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Voice timeout"
+                            else -> "Capture error code $error"
+                        }
+                        appendTerminal("\n⚠️ STT: $errorMsg")
                         _isRecordingActive.value = false
                         _appState.value = AppState.IDLE
                     }
@@ -265,7 +381,11 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun sendToJetsonSsh(text: String) {
+        // Kill any warmup or prior query still in flight — prevents session file race on server
+        warmupJob?.cancel()
         sshJob?.cancel()
+        activeSession?.disconnect()
+        activeSession = null
         val startTime = System.currentTimeMillis()
         sshJob = viewModelScope.launch {
             _appState.value = AppState.CONNECTING_SSH
@@ -288,7 +408,7 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
                         jsch.addIdentity("jetson_key_file", currentSettings.privateKey.toByteArray(Charsets.UTF_8), null, null)
                     }
 
-                    val session = jsch.getSession(currentSettings.username, currentSettings.host, currentSettings.port)
+                    val session = jsch.getSession(currentSettings.username, resolvedHost, currentSettings.port)
                     session.timeout = 0 // no SO_TIMEOUT — command loop handles the 90s ceiling
 
                     val config = java.util.Properties()
@@ -301,6 +421,7 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
                     }
 
                     session.connect(5000)
+                    activeSession = session
 
                     _appState.value = AppState.RUNNING_CMD
                     appendTerminal(" connected.")
@@ -329,9 +450,13 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
 
                     channel.disconnect()
                     session.disconnect()
+                    activeSession = null
 
                     if (responseOutput.isEmpty() && errorOutput.isNotEmpty()) {
                         throw Exception(errorOutput)
+                    }
+                    if (responseOutput.isEmpty()) {
+                        throw Exception("Empty agent response — model may still be starting")
                     }
 
                     val cleanResponse = parsePatriciaResponse(responseOutput)
@@ -369,11 +494,22 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
 
             when (result) {
                 is SshResult.Success -> {
-                    appendTerminal("\n🦉 Patricia: ${result.response}")
-                    
+                    val response = result.response
+                    if (response.isBlank()) {
+                        // Empty TTS call silently hangs — catch it here and recover
+                        appendTerminal("\n⚠️ Empty agent response — model may still be starting")
+                        _appState.value = AppState.IDLE
+                        if (currentSettings.continuousLoop && _isRecordingActive.value) {
+                            delay(600)
+                            startSpeechRecognizerInternal()
+                        }
+                        return@launch
+                    }
+                    appendTerminal("\n🦉 Patricia: $response")
+
                     if (currentSettings.autoReadTts && textToSpeech != null) {
                         _appState.value = AppState.SPEAKING
-                        textToSpeech?.speak(result.response, TextToSpeech.QUEUE_FLUSH, null, "patricia_talk")
+                        textToSpeech?.speak(response, TextToSpeech.QUEUE_FLUSH, null, "patricia_talk")
                     } else {
                         _appState.value = AppState.IDLE
                         if (currentSettings.continuousLoop && _isRecordingActive.value) {

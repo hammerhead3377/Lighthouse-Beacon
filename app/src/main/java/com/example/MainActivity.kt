@@ -218,6 +218,7 @@ fun MainScreen(
                     // Status Beacon
                     val badgeColor by animateColorAsState(
                         targetValue = when (appState) {
+                            AppState.WARMING -> Color(0xFFFFB300)
                             AppState.LISTENING -> PolishSageGreen
                             AppState.CONNECTING_SSH -> Color(0xFFFFB300)
                             AppState.RUNNING_CMD -> Color(0xFF00E5FF)
@@ -228,6 +229,7 @@ fun MainScreen(
                     )
 
                     val badgeLabel = when (appState) {
+                        AppState.WARMING -> "WARMING"
                         AppState.LISTENING -> "LISTENING"
                         AppState.CONNECTING_SSH -> "SSH DIAL"
                         AppState.RUNNING_CMD -> "RUN CMD"
