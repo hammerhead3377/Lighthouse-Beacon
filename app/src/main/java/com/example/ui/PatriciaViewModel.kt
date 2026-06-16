@@ -2,8 +2,8 @@ package com.example.ui
 
 import android.app.Application
 import android.content.Intent
+import android.content.Context
 import android.media.AudioManager
-import android.media.ToneGenerator
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -100,16 +100,6 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
         }
 
         initTextToSpeech()
-
-        // Immediate radio-chirp — fires in <100ms, no network, signals "system alive"
-        viewModelScope.launch(Dispatchers.Main) {
-            try {
-                val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-                toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 350)
-                delay(500)
-                toneGen.release()
-            } catch (_: Exception) {}
-        }
 
         // Pre-warm the model the moment the app opens so the first real query hits a warm session
         warmupJob = viewModelScope.launch {
@@ -284,6 +274,9 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
             _appState.value = AppState.LISTENING
             appendTerminal("\n🎤 Listening...")
 
+            val audioManager = getApplication<Application>()
+                .getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
             val speechContext = getApplication<Application>()
             val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -297,9 +290,15 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
             val recognizer = SpeechRecognizer.createSpeechRecognizer(speechContext)
             speechRecognizer = recognizer
 
+            // Suppress Android's built-in recognition-start beep — silent wakeword effect
+            audioManager.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_MUTE, 0)
             recognizer.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {
-                    // Speech ready
+                    // Restore system volume after recognition start beep window has passed
+                    viewModelScope.launch(Dispatchers.Main) {
+                        delay(200)
+                        audioManager.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_UNMUTE, 0)
+                    }
                 }
 
                 override fun onBeginningOfSpeech() {
@@ -376,7 +375,13 @@ class PatriciaViewModel(application: Application) : AndroidViewModel(application
                 override fun onEvent(eventType: Int, params: Bundle?) {}
             })
 
+            // Suppress system recognition start beep — silent wakeword feel
+            audioManager.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_MUTE, 0)
             recognizer.startListening(speechIntent)
+            viewModelScope.launch(Dispatchers.Main) {
+                delay(200)
+                audioManager.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_UNMUTE, 0)
+            }
         }
     }
 
