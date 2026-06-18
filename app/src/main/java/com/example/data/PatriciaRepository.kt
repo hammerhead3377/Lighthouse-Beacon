@@ -1,6 +1,5 @@
 package com.example.data
 
-import com.example.BuildConfig
 import kotlinx.coroutines.flow.Flow
 
 class PatriciaRepository(private val db: AppDatabase) {
@@ -9,7 +8,7 @@ class PatriciaRepository(private val db: AppDatabase) {
 
     suspend fun getSettings(): ConnectionSettings {
         return db.connectionSettingsDao().getSettings()
-            ?: ConnectionSettings(password = BuildConfig.SSH_LIGHTHOUSEBEACON_PWD)
+            ?: ConnectionSettings()
     }
 
     suspend fun saveSettings(settings: ConnectionSettings) {
