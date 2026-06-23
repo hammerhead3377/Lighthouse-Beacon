@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OWL — Teaser · Portrait · Lighthouse Beacon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #root { position: fixed; inset: 0; }
+  @keyframes owlGrain {
+    0%   { transform: translate(0,0); }
+    20%  { transform: translate(-12px,8px); }
+    40%  { transform: translate(8px,-10px); }
+    60%  { transform: translate(-6px,-8px); }
+    80%  { transform: translate(10px,6px); }
+    100% { transform: translate(0,0); }
+  }
+  .owl-grain { animation: owlGrain 0.7s steps(3) infinite; }
+  @keyframes owlHaze {
+    0%,100% { transform: translate(0,0) scale(1); }
+    50%     { transform: translate(-2%,1.5%) scale(1.05); }
+  }
+  .owl-haze { animation: owlHaze 14s ease-in-out infinite; }
+  @keyframes owlFlicker {
+    0%,100% { opacity: 0.85; }
+    47% { opacity: 0.6; } 49% { opacity: 0.95; }
+    72% { opacity: 0.7; } 74% { opacity: 0.9; }
+  }
+  .owl-flicker { animation: owlFlicker 3.5s ease-in-out infinite; }
+  @keyframes owlEq {
+    0%,100% { transform: scaleY(0.5); }
+    50% { transform: scaleY(1); }
+  }
+  .owl-eq { transform-origin: bottom; animation: owlEq 0.9s ease-in-out infinite; }
+  @keyframes owlFogA { from { transform: translateX(-6%); } to { transform: translateX(6%); } }
+  @keyframes owlFogB { from { transform: translateX(5%); } to { transform: translateX(-7%); } }
+  @keyframes owlFogC { from { transform: translate(-3%,2%) scale(1); } to { transform: translate(4%,-2%) scale(1.16); } }
+  .owl-fog-a { animation: owlFogA 9s ease-in-out infinite alternate; }
+  .owl-fog-b { animation: owlFogB 12s ease-in-out infinite alternate; }
+  .owl-fog-c { animation: owlFogC 14s ease-in-out infinite alternate; }
+  @media (prefers-reduced-motion: reduce) {
+    .owl-grain, .owl-haze, .owl-flicker, .owl-eq, .owl-fog-a, .owl-fog-b, .owl-fog-c { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="animations.jsx"></script>
+  <!-- portrait-specific scenes: scenes.jsx + "aaaahhhhh" third beat in FogClose -->
+  <script type="text/babel" src="scenes-portrait.jsx"></script>
+  <script type="text/babel" src="audio.jsx"></script>
+
+  <script type="text/babel">
+    const { Stage, useTime, useTimeline } = window;
+
+    // Portrait plate: swaps widescreen_teaser.mp4 → portrait_teaser.mp4
+    // and syncs currentTime with the Stage playhead on every frame.
+    function VideoSync() {
+      const t = useTime();
+      const { playing } = useTimeline();
+      const lastT = React.useRef(null);
+
+      React.useEffect(() => {
+        const v = document.querySelector('.owl-vantage-video');
+        if (!v) return;
+        // Patch src to portrait on first encounter
+        if (!v.dataset.portrait) {
+          v.src = 'uploads/portrait_teaser.mp4';
+          v.dataset.portrait = '1';
+          v.load();
+        }
+        const drifted = lastT.current === null || Math.abs(v.currentTime - t) > 0.3;
+        if (drifted) v.currentTime = Math.max(0, t);
+        if (playing) v.play().catch(() => {});
+        else v.pause();
+        lastT.current = t;
+      });
+
+      return null;
+    }
+
+    function RootLabel() {
+      const t = useTime();
+      React.useEffect(() => {
+        const root = document.getElementById('root');
+        if (root) root.setAttribute('data-screen-label', `t=${Math.floor(t)}s`);
+      }, [Math.floor(t)]);
+      return null;
+    }
+
+    function App() {
+      // Portrait canvas: 1080×1920 (9:16 — Instagram Stories / TikTok)
+      // Duration extended to 41s to give the "aaaahhhhh" beat room to land and dissolve.
+      return (
+        <Stage width={1080} height={1920} duration={41} background="#000000" persistKey="owl-teaser-portrait">
+          <RootLabel />
+          <VideoSync />
+          {/* beats: Vantage → Eye → Brand card → Player → End card */}
+          <VantageScene />
+          <EyeScene />
+          <BrandCardScene />
+          <PlayerScene />
+          <EndCardScene />
+          {/* global treatment */}
+          <ColorGrade />
+          <Vignette />
+          <FogClose />
+          <Grain />
+          <BookendBlack />
+          {/* audio */}
+          <AudioController />
+          <SoundToggle />
+        </Stage>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

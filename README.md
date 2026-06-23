@@ -1,21 +1,78 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Lighthouse Beacon
 
-# Run and deploy your AI Studio app
+Sovereign voice link for Android. Captures audio from Ray-Ban wearables (or any mic), streams it over SSH to a private Jetson server running `claw-agent`, and plays the response back — no cloud, no subscriptions, no data leaving your hardware.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/127b6495-b5a2-4a1b-9fa3-3c7e664713fb
+## What It Does
 
-## Run Locally
+1. **Capture** — Android app listens via connected Bluetooth mic (Ray-Ban Meta or device mic).
+2. **Tunnel** — Audio piped over SSH to `hammerhead7017@<jetson-host>`.
+3. **Infer** — `claw-agent` on the Jetson runs the request through DeepSeek-R1:8b (local Ollama).
+4. **Return** — Response audio streamed back, played on device.
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+No API keys. No Gemini. No Google. Thomas's stack, Thomas's rules.
 
+---
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+## Requirements
+
+- Android Studio (Hedgehog or later)
+- Physical Android device or emulator (API 26+)
+- SSH access to a running Jetson with `claw-agent` configured
+- Ray-Ban Meta glasses (optional — device mic works too)
+
+---
+
+## Setup
+
+```bash
+# Clone
+git clone <repo-url> LighthouseBeacon
+cd LighthouseBeacon
+```
+
+Copy `.env.example` to `.env` and fill in your Jetson host details:
+
+```
+JETSON_HOST=your.jetson.ip.or.hostname
+JETSON_USER=your_ssh_user
+```
+
+Open in Android Studio → **Open** → select the project directory → let Gradle sync.
+
+Run on device or emulator.
+
+---
+
+## Security
+
+- `local.properties`, `.env`, `*.jks`, `*.keystore` are all gitignored — keep them that way.
+- SSH password auth. Credentials stored via `.env` → `BuildConfig` at build time, never committed.
+- Signing key (`lighthouse-upload.jks`) stays local, never committed.
+
+---
+
+## Project Structure
+
+```
+app/                  Android app source
+assets/               Static assets
+build.gradle.kts      Root Gradle config
+play-upload.py        Google Play upload automation
+PRIVACY.md            Privacy policy (Play Store requirement)
+```
+
+---
+
+## Deployment
+
+Play Store upload handled by `play-upload.py` using service account credentials stored in `local.properties`. Build a release APK/AAB in Android Studio, then:
+
+```bash
+python3 play-upload.py
+```
+
+---
+
+*Part of the Patricia sovereign AI stack. Session 9.*
